@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { initDb, getSetting, setSetting } from "@/lib/db";
 import { hashPassword, verifyPassword, createAdminToken, ADMIN_COOKIE_NAME, ADMIN_COOKIE_MAX_AGE } from "@/lib/auth";
+import {trustedAdminMutation,allowAdminLogin} from '@/lib/admin-request';
 
 export async function POST(req: Request) {
+  if(!trustedAdminMutation(req))return NextResponse.json({error:'请求来源无效'},{status:403});
+  if(!allowAdminLogin(req))return NextResponse.json({error:'尝试次数过多，请稍后再试'},{status:429,headers:{'Retry-After':'900'}});
   try {
     initDb();
     const { password } = await req.json();
@@ -13,6 +16,7 @@ export async function POST(req: Request) {
 
     // 首次设置：还没有管理员密码（bcrypt 哈希以 $2 开头）
     if (!stored || !stored.startsWith("$2")) {
+      if(process.env.NODE_ENV==='production'&&process.env.ADMIN_SETUP_ENABLED!=='true')return NextResponse.json({error:'公开初始化已关闭，请在本机运行初始化脚本'},{status:403});
       if (String(password).length < 6)
         return NextResponse.json({ error: "密码至少 6 位" }, { status: 400 });
       const hash = await hashPassword(String(password));

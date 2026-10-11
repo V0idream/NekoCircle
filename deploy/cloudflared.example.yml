@@ -1,0 +1,8 @@
+# Copy to ignored runtime/cloudflared.yml only after the public hostname is approved.
+# A named tunnel requires an ACTIVE Cloudflare zone in the same account.
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: C:/path/to/NekoCircle/runtime/tunnel-credentials.secrets.json
+ingress:
+  - hostname: circle.example.com
+    service: http://127.0.0.1:3001
+  - service: http_status:404

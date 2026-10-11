@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_COOKIE, verifyAdminToken } from "@/lib/admin-auth";
+import {trustedAdminMutation} from '@/lib/admin-request';
 
 /* ────────────── i18n constants (duplicated to avoid importing from lib) ──────────────── */
 const LOCALES = ["zh", "en", "ja"] as const;
@@ -39,6 +40,7 @@ function originOf(req: NextRequest): string {
 
 async function handleAdminAuth(req: NextRequest): Promise<NextResponse> {
   const { pathname } = req.nextUrl;
+  if(!trustedAdminMutation(req))return NextResponse.json({error:'请求来源无效'},{status:403});
 
   // Allow login page and auth API
   if (pathname.startsWith("/admin/login")) return NextResponse.next();
@@ -74,6 +76,7 @@ export async function middleware(req: NextRequest) {
   if (
     pathname.startsWith("/api/") ||
     pathname.startsWith("/_next/") ||
+    pathname.startsWith("/assets/") ||
     pathname.startsWith("/admin")
   ) {
     // Handle admin auth for admin routes
@@ -110,5 +113,5 @@ export const config = {
   // (measured: 11MB and 17MB both failed to parse as JSON, while the same
   // build without middleware handled 17MB fine). That route authenticates
   // itself with verifyAdminToken instead.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/admin/data/import|.*\\..*).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/admin/data/import).*)"],
 };

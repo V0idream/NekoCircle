@@ -51,3 +51,5 @@ saplma/
 
 # Local runtime logs
 logs/
+runtime/
+*.secrets.txt

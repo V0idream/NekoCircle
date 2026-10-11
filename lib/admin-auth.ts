@@ -9,11 +9,9 @@ import { jwtVerify } from "jose";
 export const ADMIN_COOKIE = "neko_admin";
 
 export function getAdminSecret(): Uint8Array {
-  return new TextEncoder().encode(
-    "neko-admin-" +
-      (process.env.JWT_SECRET ?? "neko-circle-secret-change-in-prod") +
-      "-isolated",
-  );
+  const secret=process.env.ADMIN_JWT_SECRET||process.env.JWT_SECRET;
+  if(!secret||secret.length<32||secret==='your-secret-key-change-in-production')throw new Error('Configure a random JWT_SECRET of at least 32 characters');
+  return new TextEncoder().encode(process.env.ADMIN_JWT_SECRET||'neko-admin-'+secret+'-isolated');
 }
 
 /** 校验管理后台的 JWT。任何异常都视为未登录。 */
@@ -22,7 +20,7 @@ export async function verifyAdminToken(
 ): Promise<boolean> {
   if (!token) return false;
   try {
-    const { payload } = await jwtVerify(token, getAdminSecret());
+    const { payload } = await jwtVerify(token, getAdminSecret(),{algorithms:['HS256']});
     return payload.role === "admin";
   } catch {
     return false;

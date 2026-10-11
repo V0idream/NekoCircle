@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { gunzipSync } from "node:zlib";
 import { initDb } from "@/lib/db";
 import { ADMIN_COOKIE, verifyAdminToken } from "@/lib/admin-auth";
+import {trustedAdminMutation} from '@/lib/admin-request';
 import { applyImport, ImportError, type ImportMode } from "@/lib/admin-data";
 
 export const dynamic = "force-dynamic";
@@ -53,6 +54,7 @@ export async function POST(req: Request) {
   if (!(await isAdmin())) {
     return NextResponse.json({ error: "未登录或无权限" }, { status: 401 });
   }
+  if(!trustedAdminMutation(req))return NextResponse.json({error:'请求来源无效'},{status:403});
 
   const params = new URL(req.url).searchParams;
 

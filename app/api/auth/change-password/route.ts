@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { initDb, getSetting, setSetting } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/auth";
+import {trustedAdminMutation,allowAdminLogin} from '@/lib/admin-request';
 
 export async function POST(req: Request) {
+  if(!trustedAdminMutation(req))return NextResponse.json({error:'请求来源无效'},{status:403});
+  if(!allowAdminLogin(req))return NextResponse.json({error:'尝试次数过多，请稍后再试'},{status:429});
   try {
     initDb();
     const { oldPassword, newPassword } = await req.json();

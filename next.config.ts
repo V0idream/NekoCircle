@@ -31,6 +31,10 @@ function buildVersion(): string {
 }
 
 const nextConfig: NextConfig = {
+  async headers() {
+    const headers = [{ key: "Content-Security-Policy", value: "frame-ancestors 'none'" }, { key: "X-Frame-Options", value: "DENY" }];
+    return ["/admin/:path*", "/api/admin/:path*", "/api/auth/:path*"].map(source => ({ source, headers }));
+  },
   env: { NEXT_PUBLIC_BUILD_VERSION: buildVersion() },
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   images: {

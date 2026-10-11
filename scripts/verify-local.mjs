@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import Database from 'better-sqlite3';
+process.chdir(path.resolve(import.meta.dirname,'..'));
+process.loadEnvFile('.env.local');
+const origin='http://127.0.0.1:'+(process.env.NEKOCIRCLE_PORT||3001);
+const checks=[];
+for(const [url,status] of [['/api/health/live',200],['/api/health/ready',200],['/zh',200],['/assets/neko-logo.png',200],['/api/admin/settings',401],['/api/admin/announcements/example.json',401]]){
+ const response=await fetch(origin+url,{redirect:'manual'});
+ assert.equal(response.status,status,url);checks.push({url,status});
+}
+const admin=await fetch(origin+'/admin/login');
+assert.equal(admin.headers.get('x-frame-options'),'DENY');
+assert.equal(admin.headers.get('content-security-policy'),"frame-ancestors 'none'");
+const csrf=await fetch(origin+'/api/admin/settings',{method:'POST',headers:{Origin:'https://untrusted.example','Content-Type':'application/json'},body:'{}'});
+assert.equal(csrf.status,403);
+const login=await fetch(origin+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+assert.equal(login.status,403);
+const db=new Database(process.env.DB_PATH,{readonly:true});
+const backupFile=fs.readdirSync('runtime/backups').filter(file=>file.endsWith('.db')).sort().at(-1);
+assert.ok(backupFile,'online backup exists');
+const backup=new Database(path.join('runtime/backups',backupFile),{readonly:true});
+const count=database=>database.prepare('select count(*) as count from yahoo_circles').get().count;
+assert.equal(count(backup),count(db));
+assert.equal(backup.pragma('integrity_check',{simple:true}),'ok');
+const original=new Database('data/circle.db',{readonly:true});
+assert.equal(count(original),0,'original database unchanged');
+const persisted=count(db);original.close();backup.close();db.close();
+console.log(JSON.stringify({checks,administratorFraming:'denied',crossOriginMutation:403,missingLoginOrigin:403,persistedCircles:persisted,backupIntegrity:'ok',originalDatabaseCircles:0}));

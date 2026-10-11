@@ -67,7 +67,7 @@ npm start -- -H 127.0.0.1 -p 3001
 | `YAHOO_PROXY` | 可选 Yahoo 专用代理或中继 |
 | `BUILD_VERSION` | 可选构建版本号；Git 部署自动取提交号，ZIP 部署使用构建时间 |
 
-首次访问 `/admin/login` 时设置管理员密码，无预设密码，以 bcrypt 哈希保存。恢复原数据库也会保留原密码。
+生产环境默认关闭公开管理员初始化。新安装请运行 `node scripts/local-runtime.mjs init`，它会生成随机密钥、独立持久化数据库和管理员密码；已有密码不会被替换。密码只保存在被 Git 忽略的 `runtime/administrator.secrets.txt`，数据库只存 bcrypt 哈希。恢复原数据库也会保留原密码。详见 [Voidream 接入与本地运维](docs/voidream-integration.md)。
 
 GitHub 备份在后台参数设置中填写仓库所有者、仓库、已存在的分支、文件路径和令牌。令牌需要目标仓库的 Contents 读写权限，界面不会返回明文。备份只含已授权长期保存的圈子，不含临时圈子、管理员密码或配置令牌。解压 `.json.gz` 后，可通过后台导入恢复。
 

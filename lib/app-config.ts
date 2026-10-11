@@ -8,422 +8,400 @@
  * 读取带 3 秒内存缓存：抓取热路径（如 Yahoo 分页）每个请求会多次读取配置，
  * 而 lib/db.ts 的 getSetting 每次都会开关一次 SQLite 连接，直接调用开销明显。
  */
-import { deleteSetting, getAllSettings, setSetting } from "./db";
-
+import { deleteSetting, getAllSettings, setSetting } from "@/lib/db";
 export type SettingType = "text" | "number" | "boolean";
-
 export type SettingDef = {
-  key: string;
-  label: string;
-  description: string;
-  type: SettingType;
-  /** 保存值（均为字符串）。未设置时的最后兜底。 */
-  defaultValue: string;
-  /** 环境变量回落（按顺序取第一个非空值） */
-  env?: string[];
-  min?: number;
-  max?: number;
-  unit?: string;
-  group: string;
-  placeholder?: string;
-  /** 布尔值的补充说明（开/关各代表什么） */
-  onLabel?: string;
-  offLabel?: string;
-  /** 敏感值只允许写入，后台接口不会回传明文。 */
-  secret?: boolean;
+    key: string;
+    label: string;
+    description: string;
+    type: SettingType;
+    /** 保存值（均为字符串）。未设置时的最后兜底。 */
+    defaultValue: string;
+    /** 环境变量回落（按顺序取第一个非空值） */
+    env?: string[];
+    min?: number;
+    max?: number;
+    unit?: string;
+    group: string;
+    placeholder?: string;
+    /** 布尔值的补充说明（开/关各代表什么） */
+    onLabel?: string;
+    offLabel?: string;
+    /** 敏感值只允许写入，后台接口不会回传明文。 */
+    secret?: boolean;
 };
-
 /**
  * 设置定义。只有这里列出的 key 才会被保存和公开（allowlist）。
  * description 必须写清「改了会发生什么」——放一堆不生效的开关没有意义，
  * 因此这里的每一项都能在 lib/ 或 app/api/ 里找到实际引用点。
  */
 export const SETTING_DEFS: SettingDef[] = [
-  {
-    key: "global_proxy",
-    label: "数据源出口代理",
-    description:
-      "让 Yahoo 与 Bing 的抓取走代理。http:// 为 HTTP 代理，socks5:// 为 SOCKS5。留空则直连。不适用于头像图片的抓取。",
-    type: "text",
-    defaultValue: "",
-    env: ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"],
-    group: "代理",
-    placeholder: "socks5://127.0.0.1:1080",
-  },
-  {
-    key: "yahoo_proxy",
-    label: "Yahoo 专用代理",
-    description:
-      "只想让 Yahoo 走另一条线路时填写。http:// 为 HTTP 代理，https:// 为中继模式（能访问 /pagination 的网关）。优先级高于上面的「出口代理」。",
-    type: "text",
-    defaultValue: "",
-    env: ["YAHOO_PROXY"],
-    group: "代理",
-    placeholder: "https://your-relay.example.com",
-  },
-  {
-    key: "yahoo_max_pages",
-    label: "Yahoo 每方向最大页数",
-    description:
-      "每页 40 条，按 5 页一批自适应抓取；排名收敛、新增率过低或达到条数上限时会提前停止。",
-    type: "number",
-    defaultValue: "20",
-    env: ["YAHOO_MAX_PAGES"],
-    min: 1,
-    max: 30,
-    unit: "页",
-    group: "抓取",
-  },
-  {
-    key: "yahoo_parallel_pages",
-    label: "Yahoo 并发页数",
-    description:
-      "同时发出的分页请求数。调大更快，但瞬时请求数上升，更容易被限流。走 SOCKS5 时建议调低。",
-    type: "number",
-    defaultValue: "8",
-    min: 1,
-    max: 32,
-    unit: "条",
-    group: "抓取",
-  },
-  {
-    key: "bing_max_pages",
-    label: "Bing 补充最大页数",
-    description:
-      "仅当 FxTwitter 与 Yahoo 合并后不足 100 条唯一推文或 15 个用户时启用。设为 0 可完全关闭。",
-    type: "number",
-    defaultValue: "5",
-    min: 0,
-    max: 20,
-    unit: "页",
-    group: "抓取",
-  },
-  {
-    key: "payload_cache_ttl_sec",
-    label: "抓取结果缓存秒数",
-    description:
-      "Next 数据缓存（unstable_cache）对同一用户的抓取结果保留多久。修改从下次生成缓存时开始生效。",
-    type: "number",
-    defaultValue: "300",
-    min: 0,
-    max: 3600,
-    unit: "秒",
-    group: "缓存与频率",
-  },
-  {
-    key: "circle_reuse_ttl_min",
-    label: "已生成圈子的复用窗口",
-    description:
-      "同一用户再次生成时，若在这个时间内则直接返回 DB 中的已有圈子，不再请求数据源。设为 0 表示每次都重新抓取。",
-    type: "number",
-    defaultValue: "120",
-    min: 0,
-    max: 1440,
-    unit: "分",
-    group: "缓存与频率",
-  },
-  {
-    key: "force_refresh_min_interval_sec",
-    label: "强制刷新最小间隔",
-    description:
-      "避免「立即更新」被连点打垮数据源的下限。在此间隔内的重复请求会返回 DB 中的最近结果（带 throttled 标记）。",
-    type: "number",
-    defaultValue: "15",
-    min: 0,
-    max: 600,
-    unit: "秒",
-    group: "缓存与频率",
-  },
-  {
-    key: "temporary_retention_hours",
-    label: "临时圈子保留时长",
-    description:
-      "未授权长期保存的圈子超过此时长后，会进入可清理范围。已授权长期保存的数据不受影响。",
-    type: "number",
-    defaultValue: "168",
-    min: 1,
-    max: 2160,
-    unit: "小时",
-    group: "数据保存",
-  },
-  {
-    key: "temporary_auto_cleanup",
-    label: "自动清理过期临时圈子",
-    description:
-      "开启后，在生成新圈子时最多每小时检查一次，并清理超过保留时长的未授权圈子。关闭后仍可在数据管理页手动清理。",
-    type: "boolean",
-    defaultValue: "true",
-    group: "数据保存",
-    onLabel: "自动清理已开启",
-    offLabel: "仅手动清理",
-  },
-  {
-    key: "stats_generation_offset",
-    label: "累计生成基数",
-    description:
-      "用于补回丢失的历史统计。页面显示的累计生成数 = 此基数 + 当前数据库中的生成记录数；今日和趋势图不受影响。",
-    type: "number",
-    defaultValue: "0",
-    min: 0,
-    max: 2_000_000_000,
-    unit: "次",
-    group: "统计修复",
-  },
-  {
-    key: "stats_unique_users_offset",
-    label: "独立用户基数",
-    description:
-      "用于补回丢失的历史独立用户数。页面显示值 = 此基数 + 当前数据库能统计到的独立用户数。由于旧用户名已丢失，无法自动排除之后重复出现的老用户。",
-    type: "number",
-    defaultValue: "0",
-    min: 0,
-    max: 2_000_000_000,
-    unit: "人",
-    group: "统计修复",
-  },
-  {
-    key: "github_backup_enabled",
-    label: "自动同步长期数据",
-    description:
-      "开启后，每次产生已授权长期保存的圈子时，会合并触发一次 GitHub 备份。建议使用私有仓库。",
-    type: "boolean",
-    defaultValue: "false",
-    env: ["GITHUB_BACKUP_ENABLED"],
-    group: "GitHub 备份",
-    onLabel: "自动同步已开启",
-    offLabel: "仅手动同步",
-  },
-  {
-    key: "github_backup_owner",
-    label: "仓库所有者",
-    description: "GitHub 用户名或组织名。",
-    type: "text",
-    defaultValue: "",
-    env: ["GITHUB_BACKUP_OWNER"],
-    group: "GitHub 备份",
-    placeholder: "acnekot",
-  },
-  {
-    key: "github_backup_repo",
-    label: "仓库名称",
-    description: "用于保存备份的 GitHub 仓库，不要填写完整网址。建议使用私有仓库。",
-    type: "text",
-    defaultValue: "",
-    env: ["GITHUB_BACKUP_REPO"],
-    group: "GitHub 备份",
-    placeholder: "NekoCircle-Backup",
-  },
-  {
-    key: "github_backup_branch",
-    label: "备份分支",
-    description: "目标分支必须已经存在。",
-    type: "text",
-    defaultValue: "main",
-    env: ["GITHUB_BACKUP_BRANCH"],
-    group: "GitHub 备份",
-    placeholder: "main",
-  },
-  {
-    key: "github_backup_path",
-    label: "备份文件路径",
-    description:
-      "仓库内的 .json.gz 文件路径。备份只包含已授权长期保存的圈子，并可在数据管理页解压后合并导入。",
-    type: "text",
-    defaultValue: "backups/nekocircle-long-term.json.gz",
-    env: ["GITHUB_BACKUP_PATH"],
-    group: "GitHub 备份",
-    placeholder: "backups/nekocircle-long-term.json.gz",
-  },
-  {
-    key: "github_backup_token",
-    label: "GitHub 访问令牌",
-    description:
-      "使用仅对目标仓库具有 Contents 读写权限的 fine-grained token。令牌只保存在服务器数据库或环境变量中，界面不会回传明文。",
-    type: "text",
-    defaultValue: "",
-    env: ["GITHUB_BACKUP_TOKEN"],
-    group: "GitHub 备份",
-    placeholder: "github_pat_…",
-    secret: true,
-  },
-  {
-    key: "generation_enabled",
-    label: "允许生成新圈子",
-    description:
-      "关闭后生成请求一律返回 503，前台显示维护提示。数据源被限流期间可用它临时止血。",
-    type: "boolean",
-    defaultValue: "true",
-    group: "运维",
-    onLabel: "接受生成请求",
-    offLabel: "维护中（503）",
-  },
-  {
-    key: "maintenance_message",
-    label: "停止期间的提示文案",
-    description:
-      "关闭生成时返回给用户的消息。留空则使用默认文案。",
-    type: "text",
-    defaultValue: "",
-    group: "运维",
-    placeholder: "暂时停止生成新的互动圈，请稍后再试。",
-  },
+    {
+        key: "global_proxy",
+        label: "数据源出口代理",
+        description: "让 Yahoo 与 Bing 的抓取走代理。http:// 为 HTTP 代理，socks5:// 为 SOCKS5。留空则直连。不适用于头像图片的抓取。",
+        type: "text",
+        defaultValue: "",
+        env: ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"],
+        group: "代理",
+        placeholder: "socks5://127.0.0.1:1080",
+    },
+    {
+        key: "yahoo_proxy",
+        label: "Yahoo 专用代理",
+        description: "只想让 Yahoo 走另一条线路时填写。http:// 为 HTTP 代理，https:// 为中继模式（能访问 /pagination 的网关）。优先级高于上面的「出口代理」。",
+        type: "text",
+        defaultValue: "",
+        env: ["YAHOO_PROXY"],
+        group: "代理",
+        placeholder: "https://your-relay.example.com",
+    },
+    {
+        key: "yahoo_max_pages",
+        label: "Yahoo 每方向最大页数",
+        description: "每页 40 条，按 5 页一批自适应抓取；排名收敛、新增率过低或达到条数上限时会提前停止。",
+        type: "number",
+        defaultValue: "20",
+        env: ["YAHOO_MAX_PAGES"],
+        min: 1,
+        max: 30,
+        unit: "页",
+        group: "抓取",
+    },
+    {
+        key: "yahoo_parallel_pages",
+        label: "Yahoo 并发页数",
+        description: "同时发出的分页请求数。调大更快，但瞬时请求数上升，更容易被限流。走 SOCKS5 时建议调低。",
+        type: "number",
+        defaultValue: "8",
+        min: 1,
+        max: 32,
+        unit: "条",
+        group: "抓取",
+    },
+    {
+        key: "bing_max_pages",
+        label: "Bing 补充最大页数",
+        description: "仅当 FxTwitter 与 Yahoo 合并后不足 100 条唯一推文或 15 个用户时启用。设为 0 可完全关闭。",
+        type: "number",
+        defaultValue: "5",
+        min: 0,
+        max: 20,
+        unit: "页",
+        group: "抓取",
+    },
+    {
+        key: "payload_cache_ttl_sec",
+        label: "抓取结果缓存秒数",
+        description: "Next 数据缓存（unstable_cache）对同一用户的抓取结果保留多久。修改从下次生成缓存时开始生效。",
+        type: "number",
+        defaultValue: "300",
+        min: 0,
+        max: 3600,
+        unit: "秒",
+        group: "缓存与频率",
+    },
+    {
+        key: "circle_reuse_ttl_min",
+        label: "已生成圈子的复用窗口",
+        description: "同一用户再次生成时，若在这个时间内则直接返回 DB 中的已有圈子，不再请求数据源。设为 0 表示每次都重新抓取。",
+        type: "number",
+        defaultValue: "120",
+        min: 0,
+        max: 1440,
+        unit: "分",
+        group: "缓存与频率",
+    },
+    {
+        key: "force_refresh_min_interval_sec",
+        label: "强制刷新最小间隔",
+        description: "避免「立即更新」被连点打垮数据源的下限。在此间隔内的重复请求会返回 DB 中的最近结果（带 throttled 标记）。",
+        type: "number",
+        defaultValue: "15",
+        min: 0,
+        max: 600,
+        unit: "秒",
+        group: "缓存与频率",
+    },
+    {
+        key: "temporary_retention_hours",
+        label: "临时圈子保留时长",
+        description: "未授权长期保存的圈子超过此时长后，会进入可清理范围。已授权长期保存的数据不受影响。",
+        type: "number",
+        defaultValue: "168",
+        min: 1,
+        max: 2160,
+        unit: "小时",
+        group: "数据保存",
+    },
+    {
+        key: "temporary_auto_cleanup",
+        label: "自动清理过期临时圈子",
+        description: "开启后，在生成新圈子时最多每小时检查一次，并清理超过保留时长的未授权圈子。关闭后仍可在数据管理页手动清理。",
+        type: "boolean",
+        defaultValue: "true",
+        group: "数据保存",
+        onLabel: "自动清理已开启",
+        offLabel: "仅手动清理",
+    },
+    {
+        key: "stats_generation_offset",
+        label: "累计生成基数",
+        description: "用于补回丢失的历史统计。页面显示的累计生成数 = 此基数 + 当前数据库中的生成记录数；今日和趋势图不受影响。",
+        type: "number",
+        defaultValue: "0",
+        min: 0,
+        max: 2000000000,
+        unit: "次",
+        group: "统计修复",
+    },
+    {
+        key: "stats_unique_users_offset",
+        label: "独立用户基数",
+        description: "用于补回丢失的历史独立用户数。页面显示值 = 此基数 + 当前数据库能统计到的独立用户数。由于旧用户名已丢失，无法自动排除之后重复出现的老用户。",
+        type: "number",
+        defaultValue: "0",
+        min: 0,
+        max: 2000000000,
+        unit: "人",
+        group: "统计修复",
+    },
+    {
+        key: "github_backup_enabled",
+        label: "自动同步长期数据",
+        description: "开启后，每次产生已授权长期保存的圈子时，会合并触发一次 GitHub 备份。建议使用私有仓库。",
+        type: "boolean",
+        defaultValue: "false",
+        env: ["GITHUB_BACKUP_ENABLED"],
+        group: "GitHub 备份",
+        onLabel: "自动同步已开启",
+        offLabel: "仅手动同步",
+    },
+    {
+        key: "github_backup_owner",
+        label: "仓库所有者",
+        description: "GitHub 用户名或组织名。",
+        type: "text",
+        defaultValue: "",
+        env: ["GITHUB_BACKUP_OWNER"],
+        group: "GitHub 备份",
+        placeholder: "acnekot",
+    },
+    {
+        key: "github_backup_repo",
+        label: "仓库名称",
+        description: "用于保存备份的 GitHub 仓库，不要填写完整网址。建议使用私有仓库。",
+        type: "text",
+        defaultValue: "",
+        env: ["GITHUB_BACKUP_REPO"],
+        group: "GitHub 备份",
+        placeholder: "NekoCircle-Backup",
+    },
+    {
+        key: "github_backup_branch",
+        label: "备份分支",
+        description: "目标分支必须已经存在。",
+        type: "text",
+        defaultValue: "main",
+        env: ["GITHUB_BACKUP_BRANCH"],
+        group: "GitHub 备份",
+        placeholder: "main",
+    },
+    {
+        key: "github_backup_path",
+        label: "备份文件路径",
+        description: "仓库内的 .json.gz 文件路径。备份只包含已授权长期保存的圈子，并可在数据管理页解压后合并导入。",
+        type: "text",
+        defaultValue: "backups/nekocircle-long-term.json.gz",
+        env: ["GITHUB_BACKUP_PATH"],
+        group: "GitHub 备份",
+        placeholder: "backups/nekocircle-long-term.json.gz",
+    },
+    {
+        key: "github_backup_token",
+        label: "GitHub 访问令牌",
+        description: "使用仅对目标仓库具有 Contents 读写权限的 fine-grained token。令牌只保存在服务器数据库或环境变量中，界面不会回传明文。",
+        type: "text",
+        defaultValue: "",
+        env: ["GITHUB_BACKUP_TOKEN"],
+        group: "GitHub 备份",
+        placeholder: "github_pat_…",
+        secret: true,
+    },
+    {
+        key: "generation_enabled",
+        label: "允许生成新圈子",
+        description: "关闭后生成请求一律返回 503，前台显示维护提示。数据源被限流期间可用它临时止血。",
+        type: "boolean",
+        defaultValue: "true",
+        group: "运维",
+        onLabel: "接受生成请求",
+        offLabel: "维护中（503）",
+    },
+    {
+        key: "maintenance_message",
+        label: "停止期间的提示文案",
+        description: "关闭生成时返回给用户的消息。留空则使用默认文案。",
+        type: "text",
+        defaultValue: "",
+        group: "运维",
+        placeholder: "暂时停止生成新的互动圈，请稍后再试。",
+    },
 ];
-
 const DEF_BY_KEY = new Map(SETTING_DEFS.map((d) => [d.key, d]));
-
 export function getSettingDef(key: string): SettingDef | undefined {
-  return DEF_BY_KEY.get(key);
+    return DEF_BY_KEY.get(key);
 }
-
 /** 敏感 key（导出时默认排除） */
 export const CREDENTIAL_KEY_RE = /^(?:admin_password|github_backup_token)/i;
 export const SECRET_SETTING_MASK = "********";
-
 /* ------------------------------------------------------------------ */
 /* 读取                                                               */
 /* ------------------------------------------------------------------ */
-
-type CacheEntry = { at: number; values: Record<string, string> };
+type CacheEntry = {
+    at: number;
+    values: Record<string, string>;
+};
 let cache: CacheEntry | null = null;
-const CACHE_TTL_MS = 3_000;
-
+const CACHE_TTL_MS = 3000;
 export function invalidateAppConfig(): void {
-  cache = null;
+    cache = null;
 }
-
-function readAllSettings(): Record<string, string> {
-  const now = Date.now();
-  if (cache && now - cache.at < CACHE_TTL_MS) return cache.values;
-  let values: Record<string, string> = {};
-  try {
-    values = getAllSettings();
-  } catch {
-    // DB 尚不存在 / 暂时读不到时不要缓存，直接用默认值继续跑
+async function readAllSettings(): Promise<Record<string, string>> {
+    const now = Date.now();
+    if (cache && now - cache.at < CACHE_TTL_MS)
+        return cache.values;
+    let values: Record<string, string> = {};
+    try {
+        values = (await getAllSettings());
+    }
+    catch {
+        // DB 尚不存在 / 暂时读不到时不要缓存，直接用默认值继续跑
+        return values;
+    }
+    cache = { at: now, values };
     return values;
-  }
-  cache = { at: now, values };
-  return values;
 }
-
 function envValue(def: SettingDef): string | undefined {
-  for (const name of def.env ?? []) {
-    const v = process.env[name];
-    if (v !== undefined && v.trim() !== "") return v;
-  }
-  return undefined;
+    for (const name of def.env ?? []) {
+        const v = process.env[name];
+        if (v !== undefined && v.trim() !== "")
+            return v;
+    }
+    return undefined;
 }
-
 /**
  * 设置的原始值（字符串）。
  * DB 中有该行则用它，否则用环境变量，最后用默认值。
  */
-export function getSettingValue(key: string): string {
-  const def = DEF_BY_KEY.get(key);
-  if (!def) return "";
-  const stored = readAllSettings()[key];
-  if (stored !== undefined) return stored;
-  return envValue(def) ?? def.defaultValue;
+export async function getSettingValue(key: string): Promise<string> {
+    const def = DEF_BY_KEY.get(key);
+    if (!def)
+        return "";
+    const stored = (await readAllSettings())[key];
+    if (stored !== undefined)
+        return stored;
+    return envValue(def) ?? def.defaultValue;
 }
-
 /** 该值是否已保存在 DB（即已覆盖默认值） */
-export function isOverridden(key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(readAllSettings(), key);
+export async function isOverridden(key: string): Promise<boolean> {
+    return Object.prototype.hasOwnProperty.call((await readAllSettings()), key);
 }
-
 /** 校验后保存。返回规范化后的字符串。 */
-export function saveSettingValue(key: string, raw: unknown): string {
-  const def = DEF_BY_KEY.get(key);
-  if (!def) throw new Error(`unknown setting: ${key}`);
-
-  let value: string;
-  if (def.type === "boolean") {
-    value = raw === true || raw === "true" || raw === "1" || raw === 1 ? "true" : "false";
-  } else if (def.type === "number") {
-    const n = typeof raw === "number" ? raw : Number(String(raw ?? "").trim());
-    if (!Number.isFinite(n)) throw new Error(`${def.label}：请填写数字。`);
-    if (def.min !== undefined && n < def.min)
-      throw new Error(`${def.label}：请填写不小于 ${def.min} 的值。`);
-    if (def.max !== undefined && n > def.max)
-      throw new Error(`${def.label}：请填写不大于 ${def.max} 的值。`);
-    value = String(Math.floor(n));
-  } else {
-    value = String(raw ?? "").trim();
-    if (value.length > 500) throw new Error(`${def.label}：内容过长。`);
-    if (key.endsWith("_proxy") && value && !/^(https?|socks[45]?):\/\//i.test(value))
-      throw new Error(`${def.label}：请以 http://、https:// 或 socks5:// 开头。`);
-  }
-  setSetting(key, value);
-  invalidateAppConfig();
-  return value;
+export async function saveSettingValue(key: string, raw: unknown): Promise<string> {
+    const def = DEF_BY_KEY.get(key);
+    if (!def)
+        throw new Error(`unknown setting: ${key}`);
+    let value: string;
+    if (def.type === "boolean") {
+        value = raw === true || raw === "true" || raw === "1" || raw === 1 ? "true" : "false";
+    }
+    else if (def.type === "number") {
+        const n = typeof raw === "number" ? raw : Number(String(raw ?? "").trim());
+        if (!Number.isFinite(n))
+            throw new Error(`${def.label}：请填写数字。`);
+        if (def.min !== undefined && n < def.min)
+            throw new Error(`${def.label}：请填写不小于 ${def.min} 的值。`);
+        if (def.max !== undefined && n > def.max)
+            throw new Error(`${def.label}：请填写不大于 ${def.max} 的值。`);
+        value = String(Math.floor(n));
+    }
+    else {
+        value = String(raw ?? "").trim();
+        if (value.length > 500)
+            throw new Error(`${def.label}：内容过长。`);
+        if (key.endsWith("_proxy") && value && !/^(https?|socks[45]?):\/\//i.test(value))
+            throw new Error(`${def.label}：请以 http://、https:// 或 socks5:// 开头。`);
+    }
+    (await setSetting(key, value));
+    invalidateAppConfig();
+    return value;
 }
-
 /** 恢复默认（删除 DB 中的行，回落至环境变量/默认值） */
-export function resetSettingValue(key: string): void {
-  if (!DEF_BY_KEY.has(key)) throw new Error(`unknown setting: ${key}`);
-  deleteSetting(key);
-  invalidateAppConfig();
+export async function resetSettingValue(key: string): Promise<void> {
+    if (!DEF_BY_KEY.has(key))
+        throw new Error(`unknown setting: ${key}`);
+    (await deleteSetting(key));
+    invalidateAppConfig();
 }
-
 /* ------------------------------------------------------------------ */
 /* 带类型的访问器（抓取侧代码用这些）                                  */
 /* ------------------------------------------------------------------ */
-
-function num(key: string): number {
-  const def = DEF_BY_KEY.get(key)!;
-  const raw = getSettingValue(key);
-  const n = Number(raw);
-  let v = Number.isFinite(n) ? n : Number(def.defaultValue);
-  if (!Number.isFinite(v)) v = 0;
-  if (def.min !== undefined) v = Math.max(def.min, v);
-  if (def.max !== undefined) v = Math.min(def.max, v);
-  return Math.floor(v);
+async function num(key: string): Promise<number> {
+    const def = DEF_BY_KEY.get(key)!;
+    const raw = (await getSettingValue(key));
+    const n = Number(raw);
+    let v = Number.isFinite(n) ? n : Number(def.defaultValue);
+    if (!Number.isFinite(v))
+        v = 0;
+    if (def.min !== undefined)
+        v = Math.max(def.min, v);
+    if (def.max !== undefined)
+        v = Math.min(def.max, v);
+    return Math.floor(v);
 }
-
-function bool(key: string): boolean {
-  return getSettingValue(key) === "true";
+async function bool(key: string): Promise<boolean> {
+    return (await getSettingValue(key)) === "true";
 }
-
 export type AppConfig = {
-  globalProxy: string;
-  yahooProxy: string;
-  yahooMaxPages: number;
-  yahooParallelPages: number;
-  bingMaxPages: number;
-  payloadCacheTtlSec: number;
-  circleReuseTtlMs: number;
-  forceRefreshMinIntervalMs: number;
-  temporaryRetentionHours: number;
-  temporaryRetentionMs: number;
-  temporaryAutoCleanup: boolean;
-  generationEnabled: boolean;
-  statsGenerationOffset: number;
-  statsUniqueUsersOffset: number;
+    globalProxy: string;
+    yahooProxy: string;
+    yahooMaxPages: number;
+    yahooParallelPages: number;
+    bingMaxPages: number;
+    payloadCacheTtlSec: number;
+    circleReuseTtlMs: number;
+    forceRefreshMinIntervalMs: number;
+    temporaryRetentionHours: number;
+    temporaryRetentionMs: number;
+    temporaryAutoCleanup: boolean;
+    generationEnabled: boolean;
+    statsGenerationOffset: number;
+    statsUniqueUsersOffset: number;
 };
-
-export function getAppConfig(): AppConfig {
-  return {
-    globalProxy: getSettingValue("global_proxy").trim(),
-    yahooProxy: getSettingValue("yahoo_proxy").trim().replace(/\/$/, ""),
-    yahooMaxPages: num("yahoo_max_pages"),
-    yahooParallelPages: num("yahoo_parallel_pages"),
-    bingMaxPages: num("bing_max_pages"),
-    payloadCacheTtlSec: num("payload_cache_ttl_sec"),
-    circleReuseTtlMs: num("circle_reuse_ttl_min") * 60 * 1000,
-    forceRefreshMinIntervalMs: num("force_refresh_min_interval_sec") * 1000,
-    temporaryRetentionHours: num("temporary_retention_hours"),
-    temporaryRetentionMs: num("temporary_retention_hours") * 60 * 60 * 1000,
-    temporaryAutoCleanup: bool("temporary_auto_cleanup"),
-    generationEnabled: bool("generation_enabled"),
-    statsGenerationOffset: num("stats_generation_offset"),
-    statsUniqueUsersOffset: num("stats_unique_users_offset"),
-  };
+export async function getAppConfig(): Promise<AppConfig> {
+    return {
+        globalProxy: (await getSettingValue("global_proxy")).trim(),
+        yahooProxy: (await getSettingValue("yahoo_proxy")).trim().replace(/\/$/, ""),
+        yahooMaxPages: (await num("yahoo_max_pages")),
+        yahooParallelPages: (await num("yahoo_parallel_pages")),
+        bingMaxPages: (await num("bing_max_pages")),
+        payloadCacheTtlSec: (await num("payload_cache_ttl_sec")),
+        circleReuseTtlMs: (await num("circle_reuse_ttl_min")) * 60 * 1000,
+        forceRefreshMinIntervalMs: (await num("force_refresh_min_interval_sec")) * 1000,
+        temporaryRetentionHours: (await num("temporary_retention_hours")),
+        temporaryRetentionMs: (await num("temporary_retention_hours")) * 60 * 60 * 1000,
+        temporaryAutoCleanup: (await bool("temporary_auto_cleanup")),
+        generationEnabled: (await bool("generation_enabled")),
+        statsGenerationOffset: (await num("stats_generation_offset")),
+        statsUniqueUsersOffset: (await num("stats_unique_users_offset")),
+    };
 }
-
 /**
  * 解析数据源抓取用的代理。
  * 顺序：Yahoo 专用设置 → 出口代理 → 无。
  */
-export function resolveFetchProxy(): string | undefined {
-  const c = getAppConfig();
-  return c.yahooProxy || c.globalProxy || undefined;
+export async function resolveFetchProxy(): Promise<string | undefined> {
+    const c = (await getAppConfig());
+    return c.yahooProxy || c.globalProxy || undefined;
 }

@@ -12,27 +12,37 @@
   "dependencies": {
     "@fontsource-variable/m-plus-1-code": "^5.3.0",
     "@fontsource-variable/noto-sans-sc": "^5.3.0",
+    "@opennextjs/cloudflare": "1.20.10",
     "@tailwindcss/postcss": "^4.2.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.4.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@vercel/og": "^0.11.1",
+    "@vercel/og": "1.0.3",
     "autoprefixer": "^10.4.27",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.6.2",
     "https-proxy-agent": "^7.0.6",
     "jose": "^6.2.1",
-    "next": "^15.5.12",
-    "postcss": "^8.5.8",
+    "next": "15.5.27",
+    "postcss": "8.5.29",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "sharp": "0.35.5",
     "socks-proxy-agent": "^10.0.0",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3"
   },
   "devDependencies": {
-    "tsx": "^4.23.15"
+    "@cloudflare/workers-types": "5.20261011.1",
+    "tsx": "^4.23.15",
+    "wrangler": "4.149.0"
+  },
+  "overrides": {
+    "glob": "10.5.0",
+    "fflate": "0.7.5",
+    "postcss": "8.5.29",
+    "sharp": "0.35.5"
   }
 }

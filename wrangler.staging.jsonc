@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "voidream-nekocircle-staging",
+  "account_id": "31d36c33a1a0cfd7578165c0367f1777",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-11",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "voidream-nekocircle-staging" }],
+  "d1_databases": [{ "binding": "NEKOCIRCLE_DB", "database_name": "voidream-nekocircle-test", "database_id": "f7c70c32-d3e7-4dad-84a5-f007ffdb7c02", "migrations_dir": "migrations" }],
+  "vars": {
+    "NEKOCIRCLE_CLOUDFLARE": "1",
+    "SITE_URL": "https://voidream-nekocircle-staging.momentumofdreams.workers.dev",
+    "ADMIN_SETUP_ENABLED": "false",
+    "NEXT_PUBLIC_EMBED_ORIGINS": "https://voidream-web.pages.dev,https://voidream-community-staging.momentumofdreams.workers.dev,https://community-preview.voidream-web.pages.dev",
+    "YAHOO_MAX_PAGES": "8"
+  },
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 }
+}

@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import {getAdminSecret} from './admin-auth';
+import { webCryptoHash, webCryptoVerify } from './password';
 
 // ─── 管理员 Cookie（公告管理用）───
 export const ADMIN_COOKIE_NAME   = "neko_admin";
@@ -9,10 +10,13 @@ export const ADMIN_COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 // ADMIN_JWT_SECRET provides independent signing; JWT_SECRET is a namespaced fallback.
 
 export async function hashPassword(password: string) {
+  if (process.env.NEKOCIRCLE_CLOUDFLARE === '1') return webCryptoHash(password);
   return bcrypt.hash(password, 12);
 }
 
 export async function verifyPassword(password: string, hash: string) {
+  if (hash.startsWith('pbkdf2-sha256-peppered$')) return webCryptoVerify(password, hash);
+  if (process.env.NEKOCIRCLE_CLOUDFLARE === '1') return false;
   return bcrypt.compare(password, hash);
 }
 

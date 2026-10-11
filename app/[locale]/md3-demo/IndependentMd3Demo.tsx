@@ -182,7 +182,7 @@ export default function IndependentMd3Demo({
         <span>© NekoCircle</span>
         <span className={styles.footerLinks}>
           <span>{t("yahoo.inspirationFrom")} <a href="https://github.com/maebahesioru/nareaitter" target="_blank" rel="noopener noreferrer">nareaitter ↗</a></span>
-          <a href="https://github.com/acnekot/NekoCircle" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+          <a href="https://github.com/V0idream/NekoCircle/tree/codex/voidream-cloudflare" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
         </span>
       </footer>
     </div>

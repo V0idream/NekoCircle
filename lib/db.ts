@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import { circleWriteStatements } from './circle-persistence';
 
 export const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), "data", "circle.db");
 
@@ -168,6 +169,15 @@ export function createYahooCircle(
     db.prepare(
       "INSERT INTO yahoo_circles (id, username, circle_data, storage_consent, consented_at, created_at) VALUES (?, ?, ?, ?, ?, ?)"
     ).run(id, username, circleData, storageConsent ? 1 : 0, storageConsent ? now : null, now);
+  } finally { db.close(); }
+}
+
+export function persistYahooCircleGeneration(id: string, username: string, data: string, consent = false): void {
+  const db = getDb();
+  try {
+    db.transaction(() => {
+      for (const statement of circleWriteStatements(id, username, data, consent)) db.prepare(statement.sql).run(statement.values);
+    })();
   } finally { db.close(); }
 }
 

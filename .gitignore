@@ -52,4 +52,7 @@ saplma/
 # Local runtime logs
 logs/
 runtime/
+.open-next/
+.wrangler/
+.dev.vars*
 *.secrets.txt

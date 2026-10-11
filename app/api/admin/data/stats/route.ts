@@ -2,202 +2,182 @@ import { NextResponse } from "next/server";
 import { getDb, initDb } from "@/lib/db";
 import { databaseOverview } from "@/lib/admin-data";
 import { getAppConfig } from "@/lib/app-config";
-
 export const dynamic = "force-dynamic";
-
 /**
  * 聚合在 SQL 侧完成。日期分界固定为 +08:00
  * （即本工作区时区；不用 SQLite 的 'localtime'，它依赖进程 TZ，会导致
  * 不同环境下结果不一致）。
  */
 const TZ_OFFSET_SEC = 8 * 3600;
-const DAY_MS = 86_400_000;
-
+const DAY_MS = 86400000;
 function localDayExpr(col: string): string {
-  return `date(${col}/1000 + ${TZ_OFFSET_SEC}, 'unixepoch')`;
+    return `date(${col}/1000 + ${TZ_OFFSET_SEC}, 'unixepoch')`;
 }
-
 function daysAgoKey(days: number): string {
-  return new Date(Date.now() + TZ_OFFSET_SEC * 1000 - days * DAY_MS)
-    .toISOString()
-    .slice(0, 10);
+    return new Date(Date.now() + TZ_OFFSET_SEC * 1000 - days * DAY_MS)
+        .toISOString()
+        .slice(0, 10);
 }
-
 function todayKey(): string {
-  return new Date(Date.now() + TZ_OFFSET_SEC * 1000).toISOString().slice(0, 10);
+    return new Date(Date.now() + TZ_OFFSET_SEC * 1000).toISOString().slice(0, 10);
 }
-
 export async function GET() {
-  try {
-    initDb();
-  } catch (err) {
-    console.error("[admin:data:stats] database initialization failed:", err);
-    return NextResponse.json(
-      { error: "无法初始化统计数据库，请检查服务端数据库状态。" },
-      { status: 500 },
-    );
-  }
-
-  let db: ReturnType<typeof getDb>;
-  try {
-    db = getDb();
-  } catch (err) {
-    console.error("[admin:data:stats] database open failed:", err);
-    return NextResponse.json(
-      { error: "无法打开统计数据库，请检查服务端数据库状态。" },
-      { status: 500 },
-    );
-  }
-  try {
-    const nowMs = Date.now();
-
-    const one = <T,>(sql: string, ...args: unknown[]): T =>
-      db.prepare(sql).get(...args) as T;
-    const all = <T,>(sql: string, ...args: unknown[]): T[] =>
-      db.prepare(sql).all(...args) as T[];
-
-    /* --- 累计 --- */
-    const circles = one<{ c: number }>("SELECT COUNT(*) c FROM yahoo_circles").c;
-    const longTermCircles = one<{ c: number }>(
-      "SELECT COUNT(*) c FROM yahoo_circles WHERE storage_consent = 1",
-    ).c;
-    const temporaryCircles = circles - longTermCircles;
-    const config = getAppConfig();
-    const recordedGenerations = one<{ c: number }>("SELECT COUNT(*) c FROM generation_log").c;
-    const generations = config.statsGenerationOffset + recordedGenerations;
-    const uniqueUsers = config.statsUniqueUsersOffset + one<{ c: number }>(
-      "SELECT COUNT(DISTINCT LOWER(username)) c FROM generation_log",
-    ).c;
-    const today = one<{ c: number }>(
-      `SELECT COUNT(*) c FROM generation_log WHERE ${localDayExpr("created_at")} = ?`,
-      todayKey(),
-    ).c;
-    const last24h = one<{ c: number }>(
-      "SELECT COUNT(*) c FROM generation_log WHERE created_at >= ?",
-      nowMs - DAY_MS,
-    ).c;
-    const last7d = one<{ c: number }>(
-      "SELECT COUNT(*) c FROM generation_log WHERE created_at >= ?",
-      nowMs - 7 * DAY_MS,
-    ).c;
-
-    /* --- 按日（近 30 天，补零） --- */
-    const dailyRaw = all<{ d: string; c: number }>(
-      `SELECT ${localDayExpr("created_at")} d, COUNT(*) c
+    try {
+        initDb();
+    }
+    catch (err) {
+        console.error("[admin:data:stats] database initialization failed:", err);
+        return NextResponse.json({ error: "无法初始化统计数据库，请检查服务端数据库状态。" }, { status: 500 });
+    }
+    let db: ReturnType<typeof getDb>;
+    try {
+        db = getDb();
+    }
+    catch (err) {
+        console.error("[admin:data:stats] database open failed:", err);
+        return NextResponse.json({ error: "无法打开统计数据库，请检查服务端数据库状态。" }, { status: 500 });
+    }
+    try {
+        const nowMs = Date.now();
+        const one = async <T,>(sql: string, ...args: unknown[]): Promise<T> => (await db.prepare(sql).get(...args)) as T;
+        const all = async <T,>(sql: string, ...args: unknown[]): Promise<T[]> => (await db.prepare(sql).all(...args)) as T[];
+        /* --- 累计 --- */
+        const circles = (await one<{
+            c: number;
+        }>("SELECT COUNT(*) c FROM yahoo_circles")).c;
+        const longTermCircles = (await one<{
+            c: number;
+        }>("SELECT COUNT(*) c FROM yahoo_circles WHERE storage_consent = 1")).c;
+        const temporaryCircles = circles - longTermCircles;
+        const config = (await getAppConfig());
+        const recordedGenerations = (await one<{
+            c: number;
+        }>("SELECT COUNT(*) c FROM generation_log")).c;
+        const generations = config.statsGenerationOffset + recordedGenerations;
+        const uniqueUsers = config.statsUniqueUsersOffset + (await one<{
+            c: number;
+        }>("SELECT COUNT(DISTINCT LOWER(username)) c FROM generation_log")).c;
+        const today = (await one<{
+            c: number;
+        }>(`SELECT COUNT(*) c FROM generation_log WHERE ${localDayExpr("created_at")} = ?`, todayKey())).c;
+        const last24h = (await one<{
+            c: number;
+        }>("SELECT COUNT(*) c FROM generation_log WHERE created_at >= ?", nowMs - DAY_MS)).c;
+        const last7d = (await one<{
+            c: number;
+        }>("SELECT COUNT(*) c FROM generation_log WHERE created_at >= ?", nowMs - 7 * DAY_MS)).c;
+        /* --- 按日（近 30 天，补零） --- */
+        const dailyRaw = (await all<{
+            d: string;
+            c: number;
+        }>(`SELECT ${localDayExpr("created_at")} d, COUNT(*) c
        FROM generation_log
        WHERE ${localDayExpr("created_at")} >= ?
-       GROUP BY d ORDER BY d`,
-      daysAgoKey(29),
-    );
-    const dailyMap = new Map(dailyRaw.map((r) => [r.d, r.c]));
-    const daily: { date: string; count: number }[] = [];
-    for (let i = 29; i >= 0; i--) {
-      const key = daysAgoKey(i);
-      daily.push({ date: key, count: dailyMap.get(key) ?? 0 });
-    }
-
-    /* --- 按时段（近 30 天） --- */
-    const hourlyNum = all<{ h: number; c: number }>(
-      `SELECT CAST(strftime('%H', created_at/1000 + ${TZ_OFFSET_SEC}, 'unixepoch') AS INTEGER) h,
+       GROUP BY d ORDER BY d`, daysAgoKey(29)));
+        const dailyMap = new Map(dailyRaw.map((r) => [r.d, r.c]));
+        const daily: {
+            date: string;
+            count: number;
+        }[] = [];
+        for (let i = 29; i >= 0; i--) {
+            const key = daysAgoKey(i);
+            daily.push({ date: key, count: dailyMap.get(key) ?? 0 });
+        }
+        /* --- 按时段（近 30 天） --- */
+        const hourlyNum = (await all<{
+            h: number;
+            c: number;
+        }>(`SELECT CAST(strftime('%H', created_at/1000 + ${TZ_OFFSET_SEC}, 'unixepoch') AS INTEGER) h,
               COUNT(*) c
        FROM generation_log WHERE created_at >= ?
-       GROUP BY h`,
-      nowMs - 30 * DAY_MS,
-    );
-    const hourlyMap = new Map(hourlyNum.map((r) => [r.h, r.c]));
-    const hourly = Array.from({ length: 24 }, (_, h) => ({
-      hour: h,
-      count: hourlyMap.get(h) ?? 0,
-    }));
-
-    /* --- 星期 × 时段热力图（近 60 天） --- */
-    const heatRaw = all<{ w: number; h: number; c: number }>(
-      `SELECT CAST(strftime('%w', created_at/1000 + ${TZ_OFFSET_SEC}, 'unixepoch') AS INTEGER) w,
+       GROUP BY h`, nowMs - 30 * DAY_MS));
+        const hourlyMap = new Map(hourlyNum.map((r) => [r.h, r.c]));
+        const hourly = Array.from({ length: 24 }, (_, h) => ({
+            hour: h,
+            count: hourlyMap.get(h) ?? 0,
+        }));
+        /* --- 星期 × 时段热力图（近 60 天） --- */
+        const heatRaw = (await all<{
+            w: number;
+            h: number;
+            c: number;
+        }>(`SELECT CAST(strftime('%w', created_at/1000 + ${TZ_OFFSET_SEC}, 'unixepoch') AS INTEGER) w,
               CAST(strftime('%H', created_at/1000 + ${TZ_OFFSET_SEC}, 'unixepoch') AS INTEGER) h,
               COUNT(*) c
        FROM generation_log WHERE created_at >= ?
-       GROUP BY w, h`,
-      nowMs - 60 * DAY_MS,
-    );
-    const weekdayHour: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
-    for (const r of heatRaw) {
-      if (r.w >= 0 && r.w < 7 && r.h >= 0 && r.h < 24) weekdayHour[r.w][r.h] = r.c;
-    }
-
-    /* --- 排行用户 --- */
-    const topUsers = all<{ username: string; count: number; last_at: number }>(
-      `SELECT username, COUNT(*) count, MAX(created_at) last_at
+       GROUP BY w, h`, nowMs - 60 * DAY_MS));
+        const weekdayHour: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
+        for (const r of heatRaw) {
+            if (r.w >= 0 && r.w < 7 && r.h >= 0 && r.h < 24)
+                weekdayHour[r.w][r.h] = r.c;
+        }
+        /* --- 排行用户 --- */
+        const topUsers = (await all<{
+            username: string;
+            count: number;
+            last_at: number;
+        }>(`SELECT username, COUNT(*) count, MAX(created_at) last_at
        FROM generation_log
        GROUP BY LOWER(username)
        ORDER BY count DESC, last_at DESC
-       LIMIT 12`,
-    );
-
-    /* --- 来源构成 --- */
-    const sources = all<{ source: string; count: number }>(
-      "SELECT source, COUNT(*) count FROM generation_log GROUP BY source ORDER BY count DESC",
-    );
-
-    /* --- 圈子数据体积分布 --- */
-    const sizeBuckets = all<{ bucket: string; count: number }>(
-      `SELECT CASE
+       LIMIT 12`));
+        /* --- 来源构成 --- */
+        const sources = (await all<{
+            source: string;
+            count: number;
+        }>("SELECT source, COUNT(*) count FROM generation_log GROUP BY source ORDER BY count DESC"));
+        /* --- 圈子数据体积分布 --- */
+        const sizeBuckets = (await all<{
+            bucket: string;
+            count: number;
+        }>(`SELECT CASE
          WHEN LENGTH(circle_data) < 10000 THEN '<10KB'
          WHEN LENGTH(circle_data) < 50000 THEN '10–50KB'
          WHEN LENGTH(circle_data) < 100000 THEN '50–100KB'
          WHEN LENGTH(circle_data) < 300000 THEN '100–300KB'
          ELSE '≥300KB' END bucket,
          COUNT(*) count
-       FROM yahoo_circles GROUP BY bucket`,
-    );
-    const bucketOrder = ["<10KB", "10–50KB", "50–100KB", "100–300KB", "≥300KB"];
-    const sizeMap = new Map(sizeBuckets.map((r) => [r.bucket, r.count]));
-    const sizeDistribution = bucketOrder.map((b) => ({ bucket: b, count: sizeMap.get(b) ?? 0 }));
-
-    /* --- 全部已生成圈子 --- */
-    const circlesList = all<{
-      username: string;
-      created_at: number;
-      source: string;
-      id: string;
-      bytes: number;
-      storage_consent: number;
-    }>(
-      `SELECT username, created_at, 'yahoo' source, id,
+       FROM yahoo_circles GROUP BY bucket`));
+        const bucketOrder = ["<10KB", "10–50KB", "50–100KB", "100–300KB", "≥300KB"];
+        const sizeMap = new Map(sizeBuckets.map((r) => [r.bucket, r.count]));
+        const sizeDistribution = bucketOrder.map((b) => ({ bucket: b, count: sizeMap.get(b) ?? 0 }));
+        /* --- 全部已生成圈子 --- */
+        const circlesList = (await all<{
+            username: string;
+            created_at: number;
+            source: string;
+            id: string;
+            bytes: number;
+            storage_consent: number;
+        }>(`SELECT username, created_at, 'yahoo' source, id,
               LENGTH(circle_data) bytes, storage_consent
        FROM yahoo_circles
-       ORDER BY created_at DESC`,
-    );
-
-    const storage = databaseOverview();
-
-    return NextResponse.json(
-      {
-        generatedAt: new Date().toISOString(),
-        timezone: "UTC+08:00",
-        totals: { circles, generations, uniqueUsers, today, last24h, last7d },
-        offsets: {
-          generations: config.statsGenerationOffset,
-          uniqueUsers: config.statsUniqueUsersOffset,
-          recordedGenerations,
-        },
-        retention: { longTerm: longTermCircles, temporary: temporaryCircles },
-        daily,
-        hourly,
-        weekdayHour,
-        topUsers,
-        sources,
-        sizeDistribution,
-        circles: circlesList,
-        storage,
-      },
-      { headers: { "cache-control": "no-store" } },
-    );
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "统计失败。" },
-      { status: 500 },
-    );
-  } finally {
-    db.close();
-  }
+       ORDER BY created_at DESC`));
+        const storage = (await databaseOverview());
+        return NextResponse.json({
+            generatedAt: new Date().toISOString(),
+            timezone: "UTC+08:00",
+            totals: { circles, generations, uniqueUsers, today, last24h, last7d },
+            offsets: {
+                generations: config.statsGenerationOffset,
+                uniqueUsers: config.statsUniqueUsersOffset,
+                recordedGenerations,
+            },
+            retention: { longTerm: longTermCircles, temporary: temporaryCircles },
+            daily,
+            hourly,
+            weekdayHour,
+            topUsers,
+            sources,
+            sizeDistribution,
+            circles: circlesList,
+            storage,
+        }, { headers: { "cache-control": "no-store" } });
+    }
+    catch (err) {
+        return NextResponse.json({ error: err instanceof Error ? err.message : "统计失败。" }, { status: 500 });
+    }
+    finally {
+        db.close();
+    }
 }

@@ -21,10 +21,11 @@ if(command==='init'){
   const state=JSON.parse(fs.readFileSync(stateFile,'utf8'));
   try{process.kill(state.pid,0);throw new Error('Stop the managed server before building in the same directory.');}catch(error){if(error.code!=='ESRCH')throw error;}
  }
- settings();run('node_modules/next/dist/bin/next',['build']);
+ settings();run('node_modules/next/dist/bin/next',['build']);fs.writeFileSync(path.join(runtime,'last-build.json'),JSON.stringify({runtime:'sqlite'}));
 }else if(command==='start'){
  const {port,url}=settings();
  if(!fs.existsSync('.next/BUILD_ID'))throw new Error('Run build first.');
+ if(fs.existsSync(path.join(runtime,'last-build.json'))&&JSON.parse(fs.readFileSync(path.join(runtime,'last-build.json'),'utf8')).runtime==='cloudflare')throw new Error('Run local-runtime.mjs build before starting the SQLite version.');
  if(fs.existsSync(stateFile)){
   const previous=JSON.parse(fs.readFileSync(stateFile,'utf8'));
   try{process.kill(previous.pid,0);throw new Error('Recorded process is running; use status or stop first.');}catch(error){if(error.code!=='ESRCH')throw error;}

@@ -1,5 +1,7 @@
 # Voidream 接入与本地运维
 
+当前正式方案已迁移到 Cloudflare Workers + D1，公开入口为 https://voidream-web.pages.dev/circle/，无需登录。本机 SQLite 启动方式仍保留。部署与更新请使用 [Cloudflare 部署说明](./cloudflare-deployment.md)；本页 Tunnel 章节保留为早期方案记录，正式服务不依赖隧道或本机在线。
+
 两个仓库保持独立。NekoCircle 使用 Next.js 和 SQLite；Voidream 的 `/circle/` 内嵌独立服务，并提供独立窗口入口。后台通过独立服务 `/admin/login` 访问，不嵌入主站。
 
 ## 本机运行
@@ -59,7 +61,42 @@ node scripts/local-runtime.mjs start
 
 此命令保持 Tunnel 进程运行；Ctrl+C 只停止 Tunnel，Next.js 可继续本机访问。公网访问依赖这台电脑及 Tunnel 均在线，电脑关机、休眠或网络中断都会导致不可用。后续可将同一应用、持久化数据库和 Tunnel 迁移到服务器。
 
-Quick Tunnel 的随机 `trycloudflare.com` 地址只适合短期验收，重启可能变化，不作为稳定上线方案。未经地址与公开影响确认，不启动公开隧道、不修改 DNS、不部署主站。
+Quick Tunnel 的随机 `trycloudflare.com` 地址只适合短期验收，重启可能变化，不作为稳定上线方案。用户已在 2026-10-11 授权采用免费 Quick Tunnel 临时公网验收，并将入口接入主站 `/circle/`。未修改 DNS，未启用付费服务。
+
+### 临时公网启动与停止
+
+已构建本地服务时：
+
+```powershell
+node scripts/local-runtime.mjs start
+node scripts/quick-tunnel.mjs start
+node scripts/quick-tunnel.mjs status
+```
+
+启动会复用仍在运行的已管理隧道，拒绝重复创建。首次启动或重启隧道得到新地址后，需要配置 HTTPS 来源和元数据：
+
+```powershell
+node scripts/quick-tunnel.mjs configure
+node scripts/local-runtime.mjs stop
+node scripts/local-runtime.mjs build
+node scripts/local-runtime.mjs start
+node scripts/verify-public.mjs
+```
+
+`configure` 只修改忽略文件 `.env.local` 的 `SITE_URL`，不会替换密钥或数据库路径。随后将两个主站环境的 `NEKOCIRCLE_URL` 更新为新 origin，先部署测试站验收，再更新正式 Worker 和 Pages。只改源文件不会自动更新已发布页面。主站 `/circle/` 地址保持固定；内嵌的临时服务地址需要同步更新。
+
+停止公网访问及本地服务：
+
+```powershell
+node scripts/quick-tunnel.mjs stop
+node scripts/local-runtime.mjs stop
+```
+
+进程在后台运行，状态与日志保存在忽略目录 `runtime`。Tunnel 停止前会验证可执行文件路径和本次启动的唯一日志标记，不会结束无关进程。`CLOUDFLARED_PATH` 可指定官方 cloudflared 安装路径。默认采用官方 `auto` 协议选择；`CLOUDFLARED_PROTOCOL` 可设置为 `auto`、`http2` 或 `quic`，在停止后重新创建隧道时生效。不关闭 TLS 校验，不改系统代理、DNS 或防火墙。
+
+实际验收中 HTTP/2 在当前代理网络下握手失败，自动协议选择通过 QUIC 建立连接；曾出现临时断连后自动恢复。Quick Tunnel 无可用性保证、上限 200 个并发中的请求且不支持 SSE，电脑休眠或网络波动也会中断服务。查看 `runtime/logs/quick-tunnel-*.log` 的最新连接记录；不要公开完整日志、请求头或私密配置。
+
+官方说明：[Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)。
 
 官方说明：[Tunnel DNS 路由](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/routing-to-tunnel/dns/)。
 
@@ -69,8 +106,10 @@ Voidream 运行时变量 `NEKOCIRCLE_URL` 设为独立 HTTPS 根地址。只允�
 
 主站只在 `/circle/` 的 CSP 中允许这个明确的 iframe origin。NekoCircle 的管理页面和管理 API 禁止嵌入，管理写操作核对 `SITE_URL` 来源，登录限制每来源 IP 每 15 分钟 20 次。普通 JWT 和管理员 JWT 可以分别配置；密钥缺失或使用默认示例值时拒绝签名。限流状态为单进程内存，重启会重置；规模扩大时应使用共享限流。
 
+`NEXT_PUBLIC_EMBED_ORIGINS` 为可接收 PNG 的主站来源列表（逗号分隔的 HTTPS origin），它是公开配置，不是密钥。当前明确列出正式主站、独立测试站和 Pages 预览站；变更后需要重新构建 Next.js。下载时，浏览器本地 PNG 通过限定目标 origin 的 `postMessage` 交给父页面；父页面核对 iframe 实例、来源、消息 ID、PNG 类型、40 MB 大小上限和安全文件名，再在主站保存。只接受目标父页面的匹配确认；没有确认时退回独立应用原有保存逻辑。图片不经网络传到服务器，也不使用通配符目标来源。管理员页面仍禁止嵌入。
+
 ## 数据与导出验收
 
 公开数据生成依赖第三方来源。HTTP 502 或来源缺失应结合服务健康接口与后台日志判断，不应将第三方不可用当作 SQLite 或 Next.js 停机。正常数据源也可能缺少互动。
 
-本地测试结果请见 `docs/voidream-test-results.md`。自定义背景只在浏览器中处理，不上传到服务端。PNG 为 2800 × 2800；透明预览的棋盘格不会导出。正式发布后仍需从公网电脑和真实手机复验生成、上传与下载。
+本地及临时 HTTPS 测试结果请见 `docs/voidream-test-results.md`。自定义背景只在浏览器中处理，不上传到服务端。PNG 为 2800 × 2800；透明预览的棋盘格不会导出。内置测试浏览器未能捕获 iframe 文件选择器，独立窗口的背景选择、调整和下载已通过。正式发布后仍需使用真实 iOS/Android 浏览器补验上传与下载。

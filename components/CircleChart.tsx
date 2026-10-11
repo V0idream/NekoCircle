@@ -4,6 +4,7 @@ import type { AnalysisResult } from "@/lib/circle-convert";
 import { DEFAULT_STYLE, NODE_PALETTES, hexBrightness, sanitizeHex, type StyleConfig } from "@/lib/style";
 import { proxiedImageSrc } from "@/lib/proxied-image-src";
 import Md3Icon, { type Md3IconName } from "@/components/Md3Icon";
+import { drawCircleBackgroundImage, type CircleBackground } from "@/lib/circle-background";
 
 type Props = {
   result: AnalysisResult;
@@ -16,6 +17,7 @@ type Props = {
   showFallbackInitials?: boolean;
   fallbackLabelMode?: "username" | "alphabet";
   highlightedUsername?: string | null;
+  background?: CircleBackground;
 };
 
 /** 通用绘制函数，可传入任意 canvas、sc、W，供预览和高清导出复用 */
@@ -28,6 +30,7 @@ export function renderToCanvas(
     exportScale?: number;
     circleId?: string;
     transparent?: boolean;
+    background?: CircleBackground;
     flat?: boolean;
     centerAvatarAlpha?: number;
     showFallbackInitials?: boolean;
@@ -67,7 +70,10 @@ export function renderToCanvas(
   const highlightedScale = 1 + highlightPulse * 0.12;
 
   // Background
-  if (!options.transparent) {
+  const customImageDrawn = !options.transparent && options.background?.mode === "image"
+    ? drawCircleBackgroundImage(ctx, W, options.background)
+    : false;
+  if (!options.transparent && options.background?.mode !== "transparent" && !customImageDrawn) {
     const bg1 = sanitizeHex(s.bgColor1, "#b2b2b4");
     const bg2 = sanitizeHex(s.bgColor2, "#b2b2b4");
     let fill: CanvasGradient | string = bg1;
@@ -539,6 +545,7 @@ export default function CircleChart({
   showFallbackInitials = true,
   fallbackLabelMode = "username",
   highlightedUsername,
+  background,
 }: Props) {
   const s           = styleProp ?? DEFAULT_STYLE;
   const canvasRef   = useRef<HTMLCanvasElement>(null);
@@ -565,6 +572,7 @@ export default function CircleChart({
       exportScale: dpr,
       circleId: s.showCircleId ? circleId : undefined,
       transparent: flat,
+      background,
       flat,
       centerAvatarAlpha: centerAvatarCycle ? centerAvatarAlpha.current : undefined,
       showFallbackInitials,
@@ -574,7 +582,7 @@ export default function CircleChart({
     });
     // 把图片缓存挂到 canvas 上，供外部下载时复用
     (canvas as HTMLCanvasElement & { _imgCache?: Map<string, HTMLImageElement> })._imgCache = imageCache.current;
-  }, [result, s, mul, displayN, scAdapt, circleId, presentation, centerAvatarCycle, showFallbackInitials, fallbackLabelMode, highlightedUsername]);
+  }, [result, s, mul, displayN, scAdapt, circleId, presentation, centerAvatarCycle, showFallbackInitials, fallbackLabelMode, highlightedUsername, background]);
 
   /* ── Clear cache when result or avatar toggle changes ── */
   useEffect(() => {
@@ -756,6 +764,12 @@ export default function CircleChart({
   return (
     <div ref={wrapRef} className="relative inline-block w-full max-w-[820px]">
       <canvas ref={canvasRef} className={`${presentation === "flat-transparent" ? "" : "rounded-2xl"} ${interactive ? "cursor-pointer" : ""} w-full aspect-square`}
+        style={background?.mode === "transparent" ? {
+          backgroundColor: "#f2f2f2",
+          backgroundImage: "linear-gradient(45deg,#ccc 25%,transparent 25%),linear-gradient(-45deg,#ccc 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#ccc 75%),linear-gradient(-45deg,transparent 75%,#ccc 75%)",
+          backgroundSize: "20px 20px",
+          backgroundPosition: "0 0,0 10px,10px -10px,-10px 0",
+        } : undefined}
         data-circle="true"
         onMouseMove={interactive ? handleMouseMove : undefined}
         onMouseLeave={interactive ? () => setTooltip(null) : undefined}

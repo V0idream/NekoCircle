@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import CircleChart, { renderToCanvas } from "@/components/CircleChart";
 import StylePanel from "@/components/StylePanel";
+import BackgroundPanel from "@/components/BackgroundPanel";
 import FindYourself from "@/components/FindYourself";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 import FamilyTree from "@/components/FamilyTree";
@@ -19,6 +20,8 @@ import Md3Icon, { type Md3IconName } from "@/components/Md3Icon";
 import type { InteractionDiagnostics } from "@/types/interaction";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { getShareUrl } from "@/lib/share-link";
+import { DEFAULT_CIRCLE_BACKGROUND, type CircleBackground } from "@/lib/circle-background";
+import { downloadPng } from "@/lib/download-png";
 
 type Tab = "circle" | "list" | "family" | "value" | "data";
 
@@ -54,6 +57,7 @@ export default function YahooCirclePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [styleConfig, setStyleConfig] = useState<StyleConfig>(DEFAULT_STYLE);
+  const [background, setBackground] = useState<CircleBackground>(DEFAULT_CIRCLE_BACKGROUND);
   const [bgAccent, setBgAccent] = useState("");
   const [activeTab, setActiveTab] = useState<Tab>("circle");
   const [circleId, setCircleId] = useState<string | null>(null);
@@ -208,6 +212,7 @@ export default function YahooCirclePage() {
     renderToCanvas(offscreen, displayedResult, styleConfig, imgCache, {
       exportScale: EXPORT_SCALE,
       circleId: styleConfig.showCircleId ? circleId ?? undefined : undefined,
+      background,
     });
     return new Promise((res) => offscreen.toBlob(res, "image/png"));
   };
@@ -215,12 +220,7 @@ export default function YahooCirclePage() {
   const downloadCanvas = async () => {
     const blob = await getCanvasBlob();
     if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.download = `yahoo-circle-${username}.png`;
-    a.href = url;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadPng(blob, `yahoo-circle-${username}.png`);
   };
 
   const shareCircle = async () => {
@@ -386,6 +386,7 @@ export default function YahooCirclePage() {
                 maxUsers={users.length}
                 showAllOption
               />
+              <BackgroundPanel value={background} onChange={setBackground} />
               {/* Find yourself */}
               {displayedResult && (
                 <FindYourself
@@ -422,17 +423,16 @@ export default function YahooCirclePage() {
                 ))}
               </div>
 
-              {activeTab === "circle" && (
-                <div className="card tech-display-frame result-chart-stage grid place-items-center p-2 sm:p-3">
+              <div className={activeTab === "circle" ? "card tech-display-frame result-chart-stage grid place-items-center p-2 sm:p-3" : "hidden"}>
                   <CircleChart
                     result={displayedResult}
                     style={styleConfig}
                     onAccentColor={(color) => setBgAccent(color)}
                     circleId={circleId ?? undefined}
                     highlightedUsername={highlightedUsername}
+                    background={background}
                   />
-                </div>
-              )}
+              </div>
 
               {activeTab === "list" && (
                 <div className="card tech-display-frame rounded-2xl overflow-hidden">

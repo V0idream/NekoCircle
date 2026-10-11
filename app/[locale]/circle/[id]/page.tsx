@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import CircleChart, { renderToCanvas } from "@/components/CircleChart";
 import StylePanel from "@/components/StylePanel";
+import BackgroundPanel from "@/components/BackgroundPanel";
 import FindYourself from "@/components/FindYourself";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 import FamilyTree from "@/components/FamilyTree";
@@ -19,6 +20,8 @@ import Md3Icon, { type Md3IconName } from "@/components/Md3Icon";
 import type { InteractionDiagnostics } from "@/types/interaction";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { getShareUrl } from "@/lib/share-link";
+import { DEFAULT_CIRCLE_BACKGROUND, type CircleBackground } from "@/lib/circle-background";
+import { downloadPng } from "@/lib/download-png";
 
 type UnifiedCircle = {
   source: "yahoo";
@@ -44,6 +47,7 @@ export default function CirclePreviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [styleConfig, setStyleConfig] = useState<StyleConfig>(DEFAULT_STYLE);
+  const [background, setBackground] = useState<CircleBackground>(DEFAULT_CIRCLE_BACKGROUND);
   const [bgAccent, setBgAccent] = useState("");
   const [activeTab, setActiveTab] = useState<Tab>("circle");
   const [copied, setCopied] = useState(false);
@@ -88,6 +92,7 @@ export default function CirclePreviewPage() {
     renderToCanvas(offscreen, result, styleConfig, imgCache, {
       exportScale: EXPORT_SCALE,
       circleId: styleConfig.showCircleId ? circleId : undefined,
+      background,
     });
     return new Promise((res) => offscreen.toBlob(res, "image/png"));
   };
@@ -95,12 +100,7 @@ export default function CirclePreviewPage() {
   const downloadCanvas = async () => {
     const blob = await getCanvasBlob();
     if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.download = `circle-${circle?.username ?? circleId}.png`;
-    a.href = url;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadPng(blob, `circle-${circle?.username ?? circleId}.png`);
   };
 
   return (
@@ -179,6 +179,7 @@ export default function CirclePreviewPage() {
                 maxUsers={result.topUsers.length}
                 showAllOption
               />
+              <BackgroundPanel value={background} onChange={setBackground} />
             <div className="card rounded-2xl p-4 space-y-2">
                 <button
                   type="button"
@@ -259,17 +260,16 @@ export default function CirclePreviewPage() {
                 ))}
               </div>
 
-              {activeTab === "circle" && (
-                <div className="card tech-display-frame result-chart-stage grid place-items-center p-2 sm:p-3">
+              <div className={activeTab === "circle" ? "card tech-display-frame result-chart-stage grid place-items-center p-2 sm:p-3" : "hidden"}>
                   <CircleChart
                     result={result}
                     style={styleConfig}
                     onAccentColor={(color) => setBgAccent(color)}
                     circleId={circleId}
                     highlightedUsername={highlightedUsername}
+                    background={background}
                   />
-                </div>
-              )}
+              </div>
 
               {activeTab === "list" && (
                 <div className="card tech-display-frame rounded-2xl overflow-hidden">

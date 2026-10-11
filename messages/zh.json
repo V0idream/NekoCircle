@@ -225,6 +225,8 @@
   "style.displayAll": "全部",
   "style.showUsernames": "用户名",
   "style.showUsernamesDesc": "节点外侧显示 @用户名",
+  "style.showWatermark": "左下角网站水印",
+  "style.showWatermarkDesc": "关闭后预览和下载图片不显示网站水印",
   "style.showCircleId": "图片内显示圈子 ID",
   "style.showCircleIdDesc": "关闭后预览和下载图片不显示 ID",
   "style.showScores": "互动分数",

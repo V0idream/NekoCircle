@@ -225,6 +225,8 @@
   "style.displayAll": "All",
   "style.showUsernames": "Usernames",
   "style.showUsernamesDesc": "Show @username outside nodes",
+  "style.showWatermark": "Bottom-left website watermark",
+  "style.showWatermarkDesc": "Hide the website watermark from previews and downloaded images",
   "style.showCircleId": "Show Circle ID in Image",
   "style.showCircleIdDesc": "Hide the ID from previews and downloaded images",
   "style.showScores": "Scores",

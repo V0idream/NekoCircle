@@ -172,7 +172,7 @@ export function loadStyleConfig(): StyleConfig {
     return {
       ...base,
       showAvatars: true,
-      showWatermark: true,
+      showWatermark: typeof parsed.showWatermark === "boolean" ? parsed.showWatermark : DEFAULT_STYLE.showWatermark,
       showLines: true,
       glowEffect: true,
       ...(uiRedesignDefault

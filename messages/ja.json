@@ -225,6 +225,8 @@
   "style.displayAll": "全員",
   "style.showUsernames": "ユーザー名",
   "style.showUsernamesDesc": "ノードの外側に @ユーザー名を表示",
+  "style.showWatermark": "左下のサイト透かし",
+  "style.showWatermarkDesc": "オフにするとプレビューと保存画像からサイトの透かしを非表示にします",
   "style.showCircleId": "画像内にサークル ID を表示",
   "style.showCircleIdDesc": "オフにするとプレビューと保存画像から ID を非表示にします",
   "style.showScores": "スコア",

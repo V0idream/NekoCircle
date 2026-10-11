@@ -332,6 +332,7 @@ export default function StylePanel({ value: s, onChange, maxUsers = 50, showAllO
 
               {/* Image metadata, scores + rank badge toggles */}
               {[
+                { key: "showWatermark" as const, label: t("style.showWatermark"), desc: t("style.showWatermarkDesc"), icon: "globe" as const },
                 { key: "showCircleId"  as const, label: t("style.showCircleId"),  desc: t("style.showCircleIdDesc"), icon: "badge" as const },
                 { key: "showScores"    as const, label: t("style.showScores"),     desc: t("style.showScoresDesc"), icon: "star" as const },
                 { key: "showRankBadge" as const, label: t("style.showRankBadge"),  desc: t("style.showRankBadgeDesc"), icon: "rank" as const },
